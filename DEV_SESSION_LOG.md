@@ -1,21 +1,29 @@
 # DEV SESSION LOG
 
-## Session ID: 20250523-220000
-**Start Timestamp**: 2025-05-23 22:00:00
+## Session ID: 20250523-230000
+**Start Timestamp**: 2025-05-23 23:00:00
 
 ### Objective(s)
-1. Fix the error "Cannot extract voices from a non-audio request".
-2. Fix the "GenAILiveClient: Socket error" occurring during connection setup.
+1. Integrate browser Native WebSpeech API for transcription.
+2. Ship native transcription results to the "translation input" via WebSocket/BroadcastChannel.
+3. Add UI controls to switch between Neural (Gemini) and Native transcription.
 
 ### Scope Boundaries
-- `StreamingConsole.tsx`: Correcting the `LiveConnectConfig` object keys.
+- `lib/state.ts`: Persistence of transcription mode.
+- `ControlTray.tsx`: Lifecycle of `webkitSpeechRecognition`.
+- `StreamingConsole.tsx`: Display logic for WebSocket-received text.
 
 ### Files Inspected
+- `components/console/control-tray/ControlTray.tsx`
 - `components/demo/streaming-console/StreamingConsole.tsx`
+- `lib/state.ts`
 
 ---
 **Status**: COMPLETED
-**End Timestamp**: 2025-05-23 22:05:00
+**End Timestamp**: 2025-05-23 23:15:00
 **Summary of changes**: 
-- Fixed a typo in `StreamingConsole.tsx`: `responseModalalities` -> `responseModalities`. 
-- This typo was preventing the Gemini Live API from recognizing that the request was an AUDIO modality request, which triggered a server-side validation error when a `speechConfig` was provided.
+- Added `transcriptionMode` ('neural' | 'native') to state.
+- Implemented `webkitSpeechRecognition` logic in `ControlTray`.
+- results are automatically "shipped" to other tabs/components using `wsService.sendPrompt`.
+- `StreamingConsole` now listens for these messages to provide real-time visual feedback for native transcription.
+- Added a "Native API" indicator and selector in the Sidebar.

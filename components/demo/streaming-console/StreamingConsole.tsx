@@ -8,6 +8,7 @@ import cn from 'classnames';
 import { Modality, LiveConnectConfig, LiveServerToolCall } from '@google/genai';
 import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
 import { logToSupabase } from '../../../lib/supabase';
+import { wsService } from '../../../lib/websocket-service';
 import {
   useSettings,
   useLogStore,
@@ -15,19 +16,64 @@ import {
 } from '../../../lib/state';
 
 export default function StreamingConsole() {
-  const { client, setConfig, connected } = useLiveAPIContext();
-  const { systemPrompt, supabaseEnabled, sessionId } = useSettings();
+  const { client, setConfig, connected, inputVolume } = useLiveAPIContext();
+  const { systemPrompt, supabaseEnabled, sessionId, transcriptionMode } = useSettings();
   const { tools } = useTools();
   const { turns, addTurn } = useLogStore();
   
   const [transcriptionSegments, setTranscriptionSegments] = useState<string[]>([]);
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [detectedLanguage, setDetectedLanguage] = useState<string | null>(null);
+  const [latencyWarning, setLatencyWarning] = useState(false);
   
   const clearTimeoutsRef = useRef<{ input?: number }>({});
+  const lastActivityRef = useRef<number>(Date.now());
   const historyBottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastUserTextRef = useRef<string | null>(null);
+
+  // Listen for WebSocket messages (including native transcriptions)
+  useEffect(() => {
+    const handleWSMessage = (data: any) => {
+      if (data.type === 'transcription') {
+        handleTranscriptionInput(data.text, data.isFinal);
+      }
+    };
+    wsService.on('message', handleWSMessage);
+    return () => wsService.off('message', handleWSMessage);
+  }, []);
+
+  const handleTranscriptionInput = (text: string, isFinal: boolean = false) => {
+    handleActivity();
+    setIsFinalizing(false);
+
+    setTranscriptionSegments(prev => {
+      const last = prev[prev.length - 1];
+      if (last && text.startsWith(last)) {
+        const newArr = [...prev];
+        newArr[newArr.length - 1] = text;
+        return newArr;
+      }
+      return [...prev, text].slice(-2); 
+    });
+    
+    lastUserTextRef.current = text;
+
+    if (isFinal) {
+       handleTurnComplete();
+    } else {
+      if (clearTimeoutsRef.current.input) window.clearTimeout(clearTimeoutsRef.current.input);
+      clearTimeoutsRef.current.input = window.setTimeout(() => {
+        if (lastUserTextRef.current === text) {
+           handleTurnComplete();
+        }
+      }, 5000);
+    }
+  };
+
+  const handleActivity = () => {
+    lastActivityRef.current = Date.now();
+  };
 
   // Robust Auto-Scroll Logic
   useEffect(() => {
@@ -37,24 +83,45 @@ export default function StreamingConsole() {
       }
     };
 
-    // Use requestAnimationFrame to ensure the DOM has finished painting the new turn
     const frameId = requestAnimationFrame(scrollToBottom);
     return () => cancelAnimationFrame(frameId);
   }, [turns]);
 
+  // Latency Monitoring Logic
   useEffect(() => {
-    if (!connected) {
+    if (!connected || transcriptionMode === 'native') {
+      setLatencyWarning(false);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const isSpeaking = inputVolume > 0.08;
+      const timeSinceLastActivity = Date.now() - lastActivityRef.current;
+
+      if (isSpeaking && timeSinceLastActivity > 3000) {
+        setLatencyWarning(true);
+      } else if (timeSinceLastActivity < 1000) {
+        setLatencyWarning(false);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [connected, inputVolume, transcriptionMode]);
+
+  useEffect(() => {
+    if (!connected && transcriptionMode === 'neural') {
       setDetectedLanguage(null);
       setTranscriptionSegments([]);
       setIsFinalizing(false);
     }
-  }, [connected]);
+  }, [connected, transcriptionMode]);
 
   useEffect(() => {
+    if (transcriptionMode !== 'neural') return;
     const activeTools = tools.filter(t => t.isEnabled);
     
     const config: LiveConnectConfig = {
-      responseModalities: [Modality.AUDIO], // FIXED: Typo 'responseModalalities' -> 'responseModalities'
+      responseModalities: [Modality.AUDIO],
       inputAudioTranscription: {},
       speechConfig: {
         voiceConfig: {
@@ -71,100 +138,89 @@ export default function StreamingConsole() {
       }] : undefined
     };
     setConfig(config);
-  }, [setConfig, systemPrompt, tools]);
+  }, [setConfig, systemPrompt, tools, transcriptionMode]);
+
+  const handleToolCall = (toolCall: LiveServerToolCall) => {
+    handleActivity();
+    for (const fc of toolCall.functionCalls) {
+      if (fc.name === 'report_detected_language') {
+        const lang = (fc.args as any).language;
+        if (lang) {
+          setDetectedLanguage(lang);
+        }
+      }
+    }
+  };
+
+  const handleTurnComplete = () => {
+    handleActivity();
+    if (lastUserTextRef.current) {
+      const finalContent = lastUserTextRef.current;
+      setIsFinalizing(true);
+
+      setTimeout(() => {
+        addTurn({ 
+           role: 'user', 
+           text: finalContent, 
+           isFinal: true 
+        });
+
+        if (supabaseEnabled) {
+          logToSupabase({
+            session_id: sessionId,
+            user_text: finalContent,
+            agent_text: "[Log Only]",
+            language: detectedLanguage || "Unknown"
+          });
+        }
+
+        setTranscriptionSegments([]);
+        setIsFinalizing(false);
+        lastUserTextRef.current = null;
+      }, 500); 
+    }
+  };
 
   useEffect(() => {
-    const handleInputTranscription = (text: string) => {
-      setIsFinalizing(false);
+    if (transcriptionMode !== 'neural') return;
 
-      setTranscriptionSegments(prev => {
-        const last = prev[prev.length - 1];
-        if (last && text.startsWith(last)) {
-          const newArr = [...prev];
-          newArr[newArr.length - 1] = text;
-          return newArr;
-        }
-        return [...prev, text].slice(-2); 
-      });
-      
-      lastUserTextRef.current = text;
-      
-      if (clearTimeoutsRef.current.input) window.clearTimeout(clearTimeoutsRef.current.input);
-      clearTimeoutsRef.current.input = window.setTimeout(() => {
-        if (lastUserTextRef.current === text) {
-           handleTurnComplete();
-        }
-      }, 5000);
-    };
+    const onInputTrans = (text: string) => handleTranscriptionInput(text, false);
 
-    const handleToolCall = (toolCall: LiveServerToolCall) => {
-      for (const fc of toolCall.functionCalls) {
-        if (fc.name === 'report_detected_language') {
-          const lang = (fc.args as any).language;
-          if (lang) {
-            setDetectedLanguage(lang);
-          }
-        }
-      }
-    };
-
-    const handleTurnComplete = () => {
-      if (lastUserTextRef.current) {
-        const finalContent = lastUserTextRef.current;
-        setIsFinalizing(true);
-
-        // Animation duration for descent is ~500ms
-        setTimeout(() => {
-          addTurn({ 
-             role: 'user', 
-             text: finalContent, 
-             isFinal: true 
-          });
-
-          if (supabaseEnabled) {
-            logToSupabase({
-              session_id: sessionId,
-              user_text: finalContent,
-              agent_text: "[Log Only]",
-              language: detectedLanguage || "Unknown"
-            });
-          }
-
-          setTranscriptionSegments([]);
-          setIsFinalizing(false);
-          lastUserTextRef.current = null;
-        }, 500); 
-      }
-    };
-
-    client.on('inputTranscription', handleInputTranscription);
+    client.on('inputTranscription', onInputTrans);
+    client.on('audio', handleActivity);
     client.on('toolcall', handleToolCall);
     client.on('turncomplete', handleTurnComplete);
 
     return () => {
-      client.off('inputTranscription', handleInputTranscription);
+      client.off('inputTranscription', onInputTrans);
+      client.off('audio', handleActivity);
       client.off('toolcall', handleToolCall);
       client.off('turncomplete', handleTurnComplete);
     };
-  }, [client, sessionId, supabaseEnabled, addTurn, detectedLanguage]);
+  }, [client, sessionId, supabaseEnabled, addTurn, detectedLanguage, transcriptionMode]);
 
   const transcriptionText = transcriptionSegments.join(' ');
   const words = transcriptionText.split(' ').filter(w => w.length > 0);
   
-  // Sentence detection logic: 1-2 sentences reached based on punctuation
   const sentenceCount = (transcriptionText.match(/[.!?]/g) || []).length;
   const hasReachedGoal = sentenceCount >= 1;
 
   return (
     <div className="streaming-console-v3">
-      {/* 
-          TRANSCRIPTION BOX 
-      */}
       <section className="console-box live-stage-box">
         <header className="box-header">
           <div className="header-group">
             <span className="material-symbols-outlined box-icon">stream</span>
-            <h3>Neural Input</h3>
+            <h3>{transcriptionMode === 'neural' ? 'Neural Input' : 'Native Input'}</h3>
+          </div>
+          <div className="header-status-group">
+            {latencyWarning && (
+              <div className="latency-warning-pill">
+                <span className="material-symbols-outlined">network_check</span>
+                <span>SYNC DELAY</span>
+              </div>
+            )}
+            <div className={cn("status-dot", { connected: connected || (transcriptionMode === 'native' && words.length > 0) })}></div>
           </div>
         </header>
         
@@ -176,21 +232,24 @@ export default function StreamingConsole() {
                "has-content": words.length > 0 
              })}>
                 {words.map((word, idx) => (
-                  <span key={`${idx}-${word}`} className="animate-word">
+                  <span 
+                    key={`${idx}-${word}`} 
+                    className="animate-word"
+                    style={{ animationDelay: `${(idx % 12) * 35}ms` }}
+                  >
                     {word}{' '}
                   </span>
                 ))}
-                {!isFinalizing && <span className={cn("blinking-cursor", { active: connected })}></span>}
-                {!transcriptionText && connected && !isFinalizing && (
+                {!isFinalizing && (connected || transcriptionMode === 'native') && <span className={cn("blinking-cursor", { active: true })}></span>}
+                {!transcriptionText && (connected || transcriptionMode === 'native') && !isFinalizing && (
                   <span className="ready-placeholder">Listening for speech...</span>
                 )}
-                {!connected && <span className="ready-placeholder">System Standby</span>}
+                {!connected && transcriptionMode === 'neural' && <span className="ready-placeholder">System Standby</span>}
              </div>
           </div>
         </div>
       </section>
 
-      {/* HISTORY LOG */}
       <section className="console-box history-box">
         <header className="box-header">
           <div className="header-group">
@@ -214,7 +273,6 @@ export default function StreamingConsole() {
                 </div>
               ))
             )}
-            {/* The anchor for auto-scrolling */}
             <div ref={historyBottomRef} className="scroll-anchor" />
           </div>
         </div>

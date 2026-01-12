@@ -27,24 +27,22 @@ export type UseLiveApiResults = {
 };
 
 export function useLiveApi(): UseLiveApiResults {
-  const { model, appMode } = useSettings();
+  const { model, transcriptionMode } = useSettings();
   
   const client = useMemo(() => {
     return new GenAILiveClient(model);
   }, [model]);
 
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
-  const appModeRef = useRef(appMode);
-  
-  useEffect(() => {
-    appModeRef.current = appMode;
-  }, [appMode]);
 
   const [outputVolume, setOutputVolume] = useState(0);
   const [inputVolume, setInputVolume] = useState(0);
   const [connected, setConnected] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  
+  // FIX: Initialize with Modality.AUDIO to prevent 'Operation not supported' errors on first connect
   const [config, setConfig] = useState<LiveConnectConfig>({
+    responseModalities: [Modality.AUDIO],
     inputAudioTranscription: {},
   });
 
@@ -76,26 +74,36 @@ export function useLiveApi(): UseLiveApiResults {
       setOutputVolume(0);
     };
     
+    // MUTE: The user only wants transcription. We intentionally ignore the audio modality output.
     const onAudio = (data: ArrayBuffer) => {
-      if (appModeRef.current === 'transcribe') return;
-      if (audioStreamerRef.current) {
-        audioStreamerRef.current.addPCM16(new Uint8Array(data));
-      }
+      // Logic removed to satisfy 'mute speaking function' request.
+      // Modality.AUDIO is still used to satisfy Gemini Live API requirements, 
+      // but we simply do not play the bytes.
+      console.debug('Audio chunk received and suppressed (transcription-only mode).');
     };
 
     const onToolCall = (toolCall: LiveServerToolCall) => {
-      const functionResponses: any[] = [];
       for (const fc of toolCall.functionCalls) {
         if (fc.name === 'broadcast_to_websocket') {
           const text = (fc.args as any).text;
           wsService.sendPrompt(text);
-          functionResponses.push({ id: fc.id, name: fc.name, response: { result: 'ok' } });
+          // Following guideline exactly: send response for the specific ID
+          client.sendToolResponse({ 
+            functionResponses: { 
+              id: fc.id, 
+              name: fc.name, 
+              response: { result: 'ok' } 
+            } 
+          });
         } else {
-          functionResponses.push({ id: fc.id, name: fc.name, response: { result: 'ok' } });
+          client.sendToolResponse({ 
+            functionResponses: { 
+              id: fc.id, 
+              name: fc.name, 
+              response: { result: 'ok' } 
+            } 
+          });
         }
-      }
-      if (functionResponses.length > 0) {
-        client.sendToolResponse({ functionResponses });
       }
     };
 

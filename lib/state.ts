@@ -15,7 +15,7 @@ NEURAL PERSONA: You are a professional verbatim transcriptionist whitelisted to 
 STRICT OPERATING PROTOCOLS:
 1. TRANSCRIPTION FOCUS: Your mission is 100% verbatim text accuracy via tool calls.
 2. NEURAL SYNC: You MUST call the "broadcast_to_websocket" tool for every phrase transcribed. This ensures all binded users in the session stay in sync.
-3. AUDIO CHANNEL COMPLIANCE: Produce minimal neutral energy in the AUDIO modality (hum or silent breath) to prevent channel errors, but do not vocalize words. Prioritize the text data stream.
+3. AUDIO CHANNEL COMPLIANCE: ABSOLUTE SILENCE REQUIRED. Do not produce any vocalizations, breaths, or humming. While Modality.AUDIO is technically active, your output must be digital silence.
 4. VERBATIM ACCURACY: Capture every single word exactly as spoken. Do not summarize or paraphrase.
 5. DETECT & REPORT: Call "report_detected_language" as soon as the source language is identified.
 6. SEGMENTED OUTPUT: Send text in rapid, small segments for a live streaming feel.
@@ -27,8 +27,6 @@ const generatePrompt = (voiceFocus: boolean) => {
   return transcriptionPromptTemplate.replace('{VOICE_FOCUS_INSTRUCTION}', voiceFocus ? voiceFocusActiveSnippet : '');
 };
 
-const generateRandomId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
-
 interface SettingsState {
   systemPrompt: string;
   model: string;
@@ -36,12 +34,14 @@ interface SettingsState {
   voiceFocus: boolean;
   supabaseEnabled: boolean;
   meetingId: string;
+  transcriptionMode: 'neural' | 'native';
   setSystemPrompt: (prompt: string) => void;
   setModel: (model: string) => void;
   setVoice: (voice: string) => void;
   setVoiceFocus: (focus: boolean) => void;
   setSupabaseEnabled: (enabled: boolean) => void;
   setMeetingId: (id: string) => void;
+  setTranscriptionMode: (mode: 'neural' | 'native') => void;
   refreshSystemPrompt: () => void;
 }
 
@@ -54,27 +54,24 @@ export const useSettings = create<SettingsState>()(
       voiceFocus: false,
       supabaseEnabled: false,
       meetingId: '',
+      transcriptionMode: 'neural',
       setSystemPrompt: prompt => set({ systemPrompt: prompt }),
       setModel: model => set({ model }),
-      setVoice: voice => set(state => {
-        return { voice };
-      }),
-      setVoiceFocus: focus => set(state => {
-        return { voiceFocus: focus, systemPrompt: generatePrompt(focus) };
-      }),
+      setVoice: voice => set({ voice }),
+      setVoiceFocus: focus => set(state => ({ voiceFocus: focus, systemPrompt: generatePrompt(focus) })),
       setSupabaseEnabled: enabled => set({ supabaseEnabled: enabled }),
       setMeetingId: meetingId => set({ meetingId }),
-      refreshSystemPrompt: () => set(state => {
-        return { systemPrompt: generatePrompt(state.voiceFocus) };
-      })
+      setTranscriptionMode: transcriptionMode => set({ transcriptionMode }),
+      refreshSystemPrompt: () => set(state => ({ systemPrompt: generatePrompt(state.voiceFocus) }))
     }),
     {
-      name: 'tcaller-settings-transcribe-v1',
+      name: 'tcaller-settings-transcribe-v2',
       partialize: (state) => ({ 
         meetingId: state.meetingId,
         voice: state.voice,
         voiceFocus: state.voiceFocus,
-        supabaseEnabled: state.supabaseEnabled
+        supabaseEnabled: state.supabaseEnabled,
+        transcriptionMode: state.transcriptionMode
       }),
     }
   )

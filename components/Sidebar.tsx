@@ -10,7 +10,7 @@ import { useState } from 'react';
 
 export default function Sidebar() {
   const { isSidebarOpen, toggleSidebar } = useUI();
-  const { voiceFocus, supabaseEnabled, meetingId, setVoiceFocus, setSupabaseEnabled, setMeetingId } = useSettings();
+  const { voiceFocus, supabaseEnabled, meetingId, transcriptionMode, setVoiceFocus, setSupabaseEnabled, setMeetingId, setTranscriptionMode } = useSettings();
   const { connected } = useLiveAPIContext();
   
   const [copied, setCopied] = useState(false);
@@ -72,7 +72,29 @@ export default function Sidebar() {
                   </button>
                 </div>
               </div>
-              <p className="setting-hint">Persistent until session is ended. Binded sessions stream text live.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="sidebar-section">
+          <header className="section-header">
+            <span className="material-symbols-outlined">speech_to_text</span>
+            <h4>Transcription Engine</h4>
+          </header>
+          <div className="settings-card">
+             <div className="setting-row">
+              <div className="setting-info">
+                <label className="setting-label">Engine Selector</label>
+                <p className="setting-desc">{transcriptionMode === 'neural' ? 'Gemini Live' : 'Native Browser API'}</p>
+              </div>
+              <select 
+                value={transcriptionMode} 
+                onChange={(e) => setTranscriptionMode(e.target.value as any)}
+                className="minimal-select"
+              >
+                <option value="neural">Neural (Gemini)</option>
+                <option value="native">Native (WebSpeech)</option>
+              </select>
             </div>
           </div>
         </div>
@@ -128,7 +150,7 @@ export default function Sidebar() {
           <div className="status-meeting">
             {meetingId ? `BINDED: ${meetingId}` : 'ISOLATED'}
           </div>
-          <span className="version-text">v4.0.0 [EBURON.AI]</span>
+          <span className="version-text">v4.1.0 [EBURON.AI]</span>
         </div>
       </div>
     </aside>
