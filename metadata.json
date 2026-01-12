@@ -1,0 +1,7 @@
+{
+  "name": "Speaker",
+  "description": "Interactive Tunning",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
