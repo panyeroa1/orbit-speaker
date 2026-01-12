@@ -3,22 +3,6 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
 */
-/**
- * Copyright 2024 Google LLC
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 import { audioContext } from './utils';
 import AudioRecordingWorklet from './worklets/audio-processing';
 import VolMeterWorket from './worklets/vol-meter';
@@ -34,6 +18,13 @@ function arrayBufferToBase64(buffer: ArrayBuffer) {
     binary += String.fromCharCode(bytes[i]);
   }
   return window.btoa(binary);
+}
+
+export interface TuningData {
+  noiseFloor: number;
+  gain: number;
+  isSpeaking: boolean;
+  volatility: number;
 }
 
 export class AudioRecorder {
@@ -57,11 +48,12 @@ export class AudioRecorder {
   private noiseFloor: number = 0.005;
   private isSpeaking: boolean = false;
   private silenceFrames: number = 0;
-  private calibrationFrames: number = 30; // ~750ms calibration
+  private calibrationFrames: number = 40; 
   
-  // Rolling volume average for stability
+  // Volatility Tracking (Speech vs Noise)
   private volumeHistory: number[] = [];
-  private readonly HISTORY_SIZE = 12;
+  private readonly HISTORY_SIZE = 15;
+  private currentVolatility: number = 0;
 
   // Ducking Logic Variables
   private volumeMultiplier: number = 1.0; 
@@ -75,42 +67,50 @@ export class AudioRecorder {
 
   /**
    * Dynamically adjusts sensitivity and gain based on ambient noise levels.
+   * Improved with Volatility Indexing for better noise rejection.
    */
   private updateSensitivity(volume: number) {
-    // 1. Rolling Average for Energy Smoothing
+    // 1. Rolling Average & Volatility (Speech Detection Helper)
     this.volumeHistory.push(volume);
     if (this.volumeHistory.length > this.HISTORY_SIZE) {
       this.volumeHistory.shift();
     }
     const smoothVolume = this.volumeHistory.reduce((a, b) => a + b, 0) / this.volumeHistory.length;
+    
+    // Volatility = Difference between peaks and troughs in history
+    const maxV = Math.max(...this.volumeHistory);
+    const minV = Math.min(...this.volumeHistory);
+    this.currentVolatility = maxV - minV;
 
     // 2. Initial Calibration Phase
     if (this.calibrationFrames > 0) {
-      // Establish baseline noise floor aggressively during start
       this.noiseFloor = (this.noiseFloor * 0.7) + (smoothVolume * 0.3);
       this.calibrationFrames--;
       return;
     }
 
     // 3. Adaptive Noise Floor Tracking
-    // Use an asymmetric filter: noise floor drifts up slowly but down even more slowly
-    const isBackground = smoothVolume < (this.noiseFloor * 1.8);
-    const noiseAlpha = isBackground ? 0.02 : 0.0005; 
-    this.noiseFloor = this.noiseFloor * (1 - noiseAlpha) + Math.max(0.0005, smoothVolume) * noiseAlpha;
+    // Noise floor drifts up slowly but down even more slowly to preserve headroom
+    const isBackground = smoothVolume < (this.noiseFloor * 1.5) && this.currentVolatility < 0.01;
+    const noiseAlpha = isBackground ? 0.01 : 0.0002; 
+    this.noiseFloor = this.noiseFloor * (1 - noiseAlpha) + Math.max(0.0002, smoothVolume) * noiseAlpha;
 
     // 4. Dynamic Thresholding (Adaptive Schmidt Trigger)
-    const dynamicHeadroom = 1.5 + (this.noiseFloor * 20); // More headroom in noisy environments
-    const START_THRESHOLD = this.noiseFloor * (2.5 * dynamicHeadroom) + 0.008; 
-    const STOP_THRESHOLD = this.noiseFloor * (1.2 * dynamicHeadroom) + 0.004;
+    // High volatility + volume jump = Speech. High volume + low volatility = AC/Fan noise.
+    const speechProbability = this.currentVolatility / (this.noiseFloor + 0.001);
+    const dynamicHeadroom = 1.2 + (this.noiseFloor * 15);
+    
+    const START_THRESHOLD = this.noiseFloor * (2.2 * dynamicHeadroom) + 0.006; 
+    const STOP_THRESHOLD = this.noiseFloor * (1.1 * dynamicHeadroom) + 0.003;
     
     // 5. VAD State Machine
-    if (!this.isSpeaking && smoothVolume > START_THRESHOLD) {
+    if (!this.isSpeaking && smoothVolume > START_THRESHOLD && speechProbability > 1.5) {
       this.isSpeaking = true;
       this.silenceFrames = 0;
     } else if (this.isSpeaking) {
       if (smoothVolume < STOP_THRESHOLD) {
         this.silenceFrames++;
-        if (this.silenceFrames > 40) { // ~1 second of silence to end turn
+        if (this.silenceFrames > 35) { // ~875ms
           this.isSpeaking = false;
         }
       } else {
@@ -119,25 +119,24 @@ export class AudioRecorder {
     }
 
     // 6. Proportional Automatic Gain Control (AGC)
-    const TARGET_LEVEL = 0.5;
-    const MAX_BOOST = 15.0; 
+    const TARGET_LEVEL = 0.45;
+    const MAX_BOOST = 20.0; 
     
     if (this.isSpeaking) {
-      // Target a specific RMS level
-      const neededBoost = TARGET_LEVEL / Math.max(0.001, smoothVolume);
-      this.targetGain = Math.min(MAX_BOOST, Math.max(0.5, neededBoost));
+      const neededBoost = TARGET_LEVEL / Math.max(0.0005, smoothVolume);
+      this.targetGain = Math.min(MAX_BOOST, Math.max(0.8, neededBoost));
     } else {
-      // Lower gain during silence to reduce background noise amplification
-      this.targetGain = 0.05; 
+      // Scale back gain during silence to avoid "breathing" noise
+      this.targetGain = 0.1; 
     }
 
     // 7. Non-Linear Gain Smoothing
-    const gainAlpha = this.targetGain > this.currentGain ? 0.35 : 0.08;
+    const gainAlpha = this.targetGain > this.currentGain ? 0.4 : 0.05;
     this.currentGain = this.currentGain * (1 - gainAlpha) + this.targetGain * gainAlpha;
     
     // 8. Refined Asymmetric Ducking
     const isDucking = this.targetVolumeMultiplier < this.volumeMultiplier;
-    const duckingAlpha = isDucking ? 0.5 : 0.04; // Instant ducking, slow recovery
+    const duckingAlpha = isDucking ? 0.6 : 0.05; 
     this.volumeMultiplier = this.volumeMultiplier * (1 - duckingAlpha) + this.targetVolumeMultiplier * duckingAlpha;
 
     const finalGain = this.currentGain * this.volumeMultiplier;
@@ -145,6 +144,14 @@ export class AudioRecorder {
     if (this.recordingWorklet) {
       this.recordingWorklet.port.postMessage({ gain: finalGain });
     }
+
+    // Emit tuning data for UI diagnostics
+    this.emitter.emit('tuning', {
+      noiseFloor: this.noiseFloor,
+      gain: finalGain,
+      isSpeaking: this.isSpeaking,
+      volatility: this.currentVolatility
+    } as TuningData);
   }
 
   async start() {
@@ -198,7 +205,7 @@ export class AudioRecorder {
 
         this.source.connect(this.vuWorklet);
         this.recording = true;
-        this.calibrationFrames = 30; 
+        this.calibrationFrames = 40; 
         resolve();
         this.starting = null;
       } catch (err) {

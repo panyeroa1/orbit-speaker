@@ -21,25 +21,25 @@ export default function Header() {
   return (
     <header className="header-glass sticky-header header-minimal">
       <div className="header-brand">
-        <span className="material-symbols-outlined brand-icon">description</span>
+        <span className="material-symbols-outlined brand-icon">graphic_eq</span>
         <h2 className="brand-title">Neural Scribe</h2>
       </div>
       
       <div className="header-host-info">
         <div className={cn("host-pill", { "has-id": !!meetingId })}>
           <span className="material-symbols-outlined host-icon">
-            {meetingId ? 'hub' : 'record_voice_over'}
+             sensors
           </span>
           <div className="host-text-group">
-            <span className="host-label">HOST SPEAKER</span>
-            <span className="host-id">{meetingId || 'ISOLATED SESSION'}</span>
+            <span className="host-label">SCRIBE CHANNEL</span>
+            <span className="host-id">{meetingId || 'LOCAL ONLY'}</span>
           </div>
           
           {meetingId && (
             <button 
               className={cn("header-copy-btn", { copied })} 
               onClick={handleCopy}
-              title="Copy Meeting ID"
+              title="Copy Scribe ID"
             >
               <span className="material-symbols-outlined">
                 {copied ? 'check_circle' : 'content_copy'}

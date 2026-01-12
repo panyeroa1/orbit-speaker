@@ -6,6 +6,7 @@
 import React from 'react';
 import './WelcomeScreen.css';
 import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
+import { useSettings } from '../../../lib/state';
 
 interface WelcomeScreenProps {
   onLaunch?: () => void;
@@ -33,33 +34,33 @@ const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onLaunch }) => {
     <div className="welcome-screen">
       <div className="welcome-content">
         <div className="title-container">
-          <span className="welcome-icon">description</span>
+          <span className="welcome-icon">graphic_eq</span>
           <div className="title-text">
             <h2>Neural Scribe</h2>
-            <p className="subtitle">High-Fidelity Verbatim Transcription</p>
+            <p className="subtitle">High-Fidelity Audio Capture</p>
           </div>
         </div>
         <p className="welcome-description">
-          Experience ultra-low latency transcription powered by Gemini Live. 
-          Perfect for meetings, interviews, and capturing pure verbal stream of consciousness.
+          A high-performance neural engine for verbatim audio transcription. 
+          Broadcasts real-time linguistic data to connected listeners and Supabase storage.
         </p>
         
         <button className="launch-button" onClick={handleLaunch}>
-          <span className="material-symbols-outlined filled">bolt</span>
-          <span>Launch Transcription</span>
+          <span className="material-symbols-outlined filled">sensors</span>
+          <span>Start Scribe Session</span>
         </button>
 
         <div className="example-prompts-section">
           <h5 className="prompts-title">Capabilities</h5>
           <div className="example-prompts">
             <div className="prompt-card">
-              Verbatim accuracy across 100+ global languages.
+              Zero-latency verbatim capture using Gemini 2.5 Flash.
             </div>
             <div className="prompt-card">
-              Real-time multi-user session binding.
+              WebSocket & Supabase integration for session binding.
             </div>
             <div className="prompt-card">
-              Neural Voice Focus for noisy environments.
+              Neural speaker isolation and environmental noise rejection.
             </div>
           </div>
         </div>

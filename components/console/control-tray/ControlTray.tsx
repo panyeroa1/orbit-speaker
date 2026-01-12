@@ -5,7 +5,7 @@
 */
 import cn from 'classnames';
 import React, { memo, useEffect, useRef, useState } from 'react';
-import { AudioRecorder } from '../../../lib/audio-recorder';
+import { AudioRecorder, TuningData } from '../../../lib/audio-recorder';
 import { useUI, useSettings } from '../../../lib/state';
 import { useLiveAPIContext } from '../../../contexts/LiveAPIContext';
 import { wsService } from '../../../lib/websocket-service';
@@ -33,16 +33,13 @@ const MiniVisualizer = memo(({ volume, active }: { volume: number; active: boole
 function ControlTray() {
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
-  const { client, connected, connect, disconnect, setInputVolume, inputVolume } = useLiveAPIContext();
+  const { client, connected, connect, disconnect, setInputVolume, inputVolume, tuningData } = useLiveAPIContext();
   const { toggleSidebar, isSidebarOpen } = useUI();
-  // Fix: Destructure setVoiceFocus from useSettings to allow toggling Voice Focus sensitivity.
   const { voiceFocus, transcriptionMode, setVoiceFocus } = useSettings();
   
-  // Native Recognition Ref
   const recognitionRef = useRef<any>(null);
   const [isNativeTranscribing, setIsNativeTranscribing] = useState(false);
 
-  // Initialize Native WebSpeech
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition && !recognitionRef.current) {
@@ -65,7 +62,6 @@ function ControlTray() {
 
         const transcript = finalTranscript || interimTranscript;
         if (transcript.trim()) {
-          // SHIP TO WEBSOCKET
           wsService.sendPrompt({ 
             type: 'transcription', 
             text: transcript, 
@@ -77,7 +73,7 @@ function ControlTray() {
 
       recognition.onend = () => {
         if (isNativeTranscribing) {
-          recognition.start(); // Auto-restart if we intended to stay active
+          recognition.start();
         }
       };
 
@@ -85,7 +81,6 @@ function ControlTray() {
     }
   }, [isNativeTranscribing]);
 
-  // Audio Recording (Neural Mode)
   useEffect(() => {
     if (transcriptionMode !== 'neural') {
        audioRecorder.stop();
@@ -107,9 +102,20 @@ function ControlTray() {
       }
     };
 
+    const onTuning = (data: TuningData) => {
+      // Logic for capturing tuning data handled via context hook subscription
+    };
+
     if (connected && !muted && audioRecorder) {
       audioRecorder.on('data', onData);
       audioRecorder.on('volume', onVolume);
+      
+      // Hook the tuning data into the context-aware hook proxy (implemented in use-live-api)
+      // Since useLiveApi returns the state, we can hack a quick subscription here if needed,
+      // but the useLiveApi hook already manages the instance logic in some builds.
+      // Here, we'll manually bridge it for consistency.
+      (client as any)._audioRecorder = audioRecorder; 
+
       audioRecorder.start();
     } else {
       audioRecorder.stop();
@@ -133,7 +139,6 @@ function ControlTray() {
       return;
     }
 
-    // Default Neural Logic
     if (connected) {
       setMuted(!muted);
     } else {

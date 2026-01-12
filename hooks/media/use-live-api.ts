@@ -11,6 +11,7 @@ import { audioContext } from '../../lib/utils';
 import VolMeterWorket from '../../lib/worklets/vol-meter';
 import { useSettings } from '../../lib/state';
 import { wsService } from '../../lib/websocket-service';
+import { TuningData } from '../../lib/audio-recorder';
 
 export type UseLiveApiResults = {
   client: GenAILiveClient;
@@ -24,6 +25,7 @@ export type UseLiveApiResults = {
   outputVolume: number;
   inputVolume: number;
   setInputVolume: (v: number) => void;
+  tuningData: TuningData | null;
 };
 
 export function useLiveApi(): UseLiveApiResults {
@@ -39,8 +41,8 @@ export function useLiveApi(): UseLiveApiResults {
   const [inputVolume, setInputVolume] = useState(0);
   const [connected, setConnected] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [tuningData, setTuningData] = useState<TuningData | null>(null);
   
-  // FIX: Initialize with Modality.AUDIO to prevent 'Operation not supported' errors on first connect
   const [config, setConfig] = useState<LiveConnectConfig>({
     responseModalities: [Modality.AUDIO],
     inputAudioTranscription: {},
@@ -67,6 +69,7 @@ export function useLiveApi(): UseLiveApiResults {
       setConnected(false);
       setInputVolume(0);
       setOutputVolume(0);
+      setTuningData(null);
     };
     const onError = () => {
       setConnected(false);
@@ -74,11 +77,7 @@ export function useLiveApi(): UseLiveApiResults {
       setOutputVolume(0);
     };
     
-    // MUTE: The user only wants transcription. We intentionally ignore the audio modality output.
     const onAudio = (data: ArrayBuffer) => {
-      // Logic removed to satisfy 'mute speaking function' request.
-      // Modality.AUDIO is still used to satisfy Gemini Live API requirements, 
-      // but we simply do not play the bytes.
       console.debug('Audio chunk received and suppressed (transcription-only mode).');
     };
 
@@ -87,21 +86,20 @@ export function useLiveApi(): UseLiveApiResults {
         if (fc.name === 'broadcast_to_websocket') {
           const text = (fc.args as any).text;
           wsService.sendPrompt(text);
-          // Following guideline exactly: send response for the specific ID
           client.sendToolResponse({ 
-            functionResponses: { 
+            functionResponses: [{ 
               id: fc.id, 
               name: fc.name, 
               response: { result: 'ok' } 
-            } 
+            }] 
           });
         } else {
           client.sendToolResponse({ 
-            functionResponses: { 
+            functionResponses: [{ 
               id: fc.id, 
               name: fc.name, 
               response: { result: 'ok' } 
-            } 
+            }] 
           });
         }
       }
@@ -145,6 +143,7 @@ export function useLiveApi(): UseLiveApiResults {
     volume: outputVolume,
     outputVolume, 
     inputVolume,
-    setInputVolume
+    setInputVolume,
+    tuningData
   };
 }

@@ -1,5 +1,5 @@
 {
-  "name": "Speaker",
+  "name": "t-lator",
   "description": "Interactive Tunning",
   "requestFramePermissions": [
     "microphone"

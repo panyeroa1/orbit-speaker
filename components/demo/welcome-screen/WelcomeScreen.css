@@ -13,7 +13,7 @@
 
 .welcome-content {
   width: 100%;
-  max-width: 400px;
+  max-width: 440px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,31 +41,24 @@
   width: 100%;
 }
 
-.title-selector {
-  width: 100%;
-}
-
-.title-selector select {
-  width: 100%;
-  text-align: center;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: white;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 14px 20px;
-  border-radius: 100px;
-  appearance: none;
-  cursor: pointer;
-  outline: none;
-  transition: all 0.2s;
+.subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-weight: 800;
 }
 
 .welcome-description {
   font-size: 1rem;
-  line-height: 1.5;
-  opacity: 0.7;
+  line-height: 1.6;
+  opacity: 0.8;
   font-weight: 300;
+}
+
+.welcome-description strong {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .launch-button {
@@ -82,6 +75,12 @@
   font-weight: 700;
   width: 100%;
   box-shadow: 0 10px 25px -5px var(--accent-glow);
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.launch-button:hover {
+  transform: translateY(-2px);
 }
 
 .example-prompts-section {
