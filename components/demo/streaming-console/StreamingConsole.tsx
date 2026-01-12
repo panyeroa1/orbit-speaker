@@ -26,12 +26,20 @@ export default function StreamingConsole() {
   
   const clearTimeoutsRef = useRef<{ input?: number }>({});
   const historyBottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const lastUserTextRef = useRef<string | null>(null);
 
+  // Robust Auto-Scroll Logic
   useEffect(() => {
-    if (historyBottomRef.current) {
-      historyBottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
+    const scrollToBottom = () => {
+      if (historyBottomRef.current) {
+        historyBottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
+    };
+
+    // Use requestAnimationFrame to ensure the DOM has finished painting the new turn
+    const frameId = requestAnimationFrame(scrollToBottom);
+    return () => cancelAnimationFrame(frameId);
   }, [turns]);
 
   useEffect(() => {
@@ -46,7 +54,7 @@ export default function StreamingConsole() {
     const activeTools = tools.filter(t => t.isEnabled);
     
     const config: LiveConnectConfig = {
-      responseModalities: [Modality.AUDIO],
+      responseModalalities: [Modality.AUDIO],
       inputAudioTranscription: {},
       speechConfig: {
         voiceConfig: {
@@ -191,7 +199,7 @@ export default function StreamingConsole() {
           </div>
         </header>
 
-        <div className="box-content archive-scroll">
+        <div className="box-content archive-scroll" ref={scrollContainerRef}>
           <div className="archive-list">
             {turns.length === 0 ? (
               <div className="archive-empty">Verbatim transcript log will appear here...</div>
@@ -206,7 +214,8 @@ export default function StreamingConsole() {
                 </div>
               ))
             )}
-            <div ref={historyBottomRef} style={{ height: '40px', width: '100%' }} />
+            {/* The anchor for auto-scrolling */}
+            <div ref={historyBottomRef} className="scroll-anchor" />
           </div>
         </div>
       </section>
