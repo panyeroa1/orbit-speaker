@@ -54,7 +54,7 @@ export default function StreamingConsole() {
     const activeTools = tools.filter(t => t.isEnabled);
     
     const config: LiveConnectConfig = {
-      responseModalalities: [Modality.AUDIO],
+      responseModalities: [Modality.AUDIO], // FIXED: Typo 'responseModalalities' -> 'responseModalities'
       inputAudioTranscription: {},
       speechConfig: {
         voiceConfig: {
